@@ -5,7 +5,7 @@ WORKDIR /build
 COPY . /build
 RUN mvn clean package -Dquarkus.package.type=native-sources
 
-FROM ubuntu:18.04 AS build-image
+FROM ubuntu:18.04 AS win-build-image
 
 RUN apt update && apt install -y curl wget xz-utils make binutils
 
@@ -23,7 +23,7 @@ RUN mkdir -p /build
 COPY zigcc /
 COPY --from=maven-image /build/target/native-sources /build
 
-ENV TARGET="-target x86_64-linux-musl"
+ENV TARGET="-target x86_64-windows-gnu"
 ENV CC="zig cc ${TARGET} -Wl,--no-as-needed"
 ENV CXX="zig c++ ${TARGET} -Wl,--no-as-needed"
 RUN curl -L -o zlib.tar.gz https://zlib.net/zlib-1.2.12.tar.gz && \
@@ -45,9 +45,3 @@ RUN (cd build && \
     $(cat native-image.args))
 
 ENTRYPOINT [ "/bin/bash" ]
-
-FROM scratch
-
-COPY --from=build-image /build/code-with-quarkus-1.0.0-SNAPSHOT-runner /
-
-ENTRYPOINT [ "/code-with-quarkus-1.0.0-SNAPSHOT-runner" ]

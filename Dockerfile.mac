@@ -5,9 +5,9 @@ WORKDIR /build
 COPY . /build
 RUN mvn clean package -Dquarkus.package.type=native-sources
 
-FROM ubuntu:18.04 AS build-image
+FROM ubuntu:18.04 AS mac-build-image
 
-RUN apt update && apt install -y curl wget xz-utils make binutils
+RUN apt update && apt install -y curl wget xz-utils
 
 # Using Zig nightly build
 RUN wget https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.1.0/graalvm-ce-java11-linux-amd64-22.1.0.tar.gz && \
@@ -20,34 +20,18 @@ RUN gu install native-image
 
 RUN mkdir -p /build
 
+ENV TARGET="-target x86_64-macos"
+
 COPY zigcc /
 COPY --from=maven-image /build/target/native-sources /build
 
-ENV TARGET="-target x86_64-linux-musl"
-ENV CC="zig cc ${TARGET} -Wl,--no-as-needed"
-ENV CXX="zig c++ ${TARGET} -Wl,--no-as-needed"
-RUN curl -L -o zlib.tar.gz https://zlib.net/zlib-1.2.12.tar.gz && \
-    mkdir zlib && tar -xvzf zlib.tar.gz -C zlib --strip-components 1 && \
-    cd zlib && ./configure --static && \
-    make && make install
-
 RUN (cd build && \
     native-image \
-    -H:CLibraryPath=/zlib \
-    -H:-StaticExecutableWithDynamicLibC \
     --native-compiler-path="/zigcc" \
-    --native-compiler-options="${TARGET} -v -Wl,--no-as-needed" \
-    --libc="musl" \
-    --static \
+    --native-compiler-options="${TARGET} -v" \
     --no-fallback \
     --verbose \
     --no-server \
     $(cat native-image.args))
 
 ENTRYPOINT [ "/bin/bash" ]
-
-FROM scratch
-
-COPY --from=build-image /build/code-with-quarkus-1.0.0-SNAPSHOT-runner /
-
-ENTRYPOINT [ "/code-with-quarkus-1.0.0-SNAPSHOT-runner" ]
