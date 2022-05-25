@@ -7,47 +7,53 @@ RUN mvn clean package -Dquarkus.package.type=native-sources
 
 FROM ubuntu:18.04 AS build-image
 
-RUN apt update && apt install -y curl wget xz-utils make binutils
+RUN apt-get update && apt-get install -y curl wget build-essential make binutils
 
-# Using Zig nightly build
 RUN wget https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.1.0/graalvm-ce-java11-linux-amd64-22.1.0.tar.gz && \
-    tar -xvf graalvm-ce-java11-linux-amd64-22.1.0.tar.gz && \
-    wget https://ziglang.org/builds/zig-linux-x86_64-0.10.0-dev.2351+b64a1d5ab.tar.xz && \
-    tar -xvf zig-linux-x86_64-0.10.0-dev.2351+b64a1d5ab.tar.xz
-ENV PATH="/graalvm-ce-java11-22.1.0/bin:/zig-linux-x86_64-0.10.0-dev.2351+b64a1d5ab:${PATH}"
+    tar -xvf graalvm-ce-java11-linux-amd64-22.1.0.tar.gz
+ENV PATH="/graalvm-ce-java11-22.1.0/bin:${PATH}"
 
 RUN gu install native-image
 
 RUN mkdir -p /build
 
-COPY zigcc /
 COPY --from=maven-image /build/target/native-sources /build
 
-ENV TARGET="-target x86_64-linux-musl"
-ENV CC="zig cc ${TARGET} -Wl,--no-as-needed"
-ENV CXX="zig c++ ${TARGET} -Wl,--no-as-needed"
-RUN curl -L -o zlib.tar.gz https://zlib.net/zlib-1.2.12.tar.gz && \
-    mkdir zlib && tar -xvzf zlib.tar.gz -C zlib --strip-components 1 && \
-    cd zlib && ./configure --static && \
-    make && make install
+# NON STATIC build
+RUN apt-get update && apt-get install -y libz-dev
+RUN (cd build && native-image $(cat native-image.args))
 
-RUN (cd build && \
-    native-image \
-    -H:CLibraryPath=/zlib \
-    -H:-StaticExecutableWithDynamicLibC \
-    --native-compiler-path="/zigcc" \
-    --native-compiler-options="${TARGET} -v -Wl,--no-as-needed" \
-    --libc="musl" \
-    --static \
-    --no-fallback \
-    --verbose \
-    --no-server \
-    $(cat native-image.args))
+# Mostly static build
+# -H:+StaticExecutableWithDynamicLibC
+
+# Fully static build
+# # Set up musl, in order to produce a static image compatible to alpine
+# ARG RESULT_LIB="/musl"
+# RUN mkdir ${RESULT_LIB} && \
+#     curl -L -o musl.tar.gz https://more.musl.cc/10.2.1/x86_64-linux-musl/x86_64-linux-musl-native.tgz && \
+#     tar -xvzf musl.tar.gz -C ${RESULT_LIB} --strip-components 1
+
+# RUN curl -L -o zlib.tar.gz https://zlib.net/zlib-1.2.12.tar.gz && \
+#     mkdir zlib && tar -xvzf zlib.tar.gz -C zlib --strip-components 1 && \
+#     cd zlib && ./configure --static --prefix=/musl && \
+#     make && make install && \
+#     cd / && rm -rf /zlib && rm -f /zlib.tar.gz
+# ENV PATH="$PATH:/musl/bin"
+
+# RUN (cd build && \
+#     native-image \
+#     --libc="musl" \
+#     --static \
+#     --no-fallback \
+#     --verbose \
+#     --no-server \
+#     $(cat native-image.args))
+# END full static
 
 ENTRYPOINT [ "/bin/bash" ]
 
-FROM scratch
+# FROM scratch
 
-COPY --from=build-image /build/code-with-quarkus-1.0.0-SNAPSHOT-runner /
+# COPY --from=build-image /build/code-with-quarkus-1.0.0-SNAPSHOT-runner /
 
-ENTRYPOINT [ "/code-with-quarkus-1.0.0-SNAPSHOT-runner" ]
+# ENTRYPOINT [ "/code-with-quarkus-1.0.0-SNAPSHOT-runner" ]
