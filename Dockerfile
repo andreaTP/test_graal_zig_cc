@@ -24,7 +24,9 @@ RUN apt-get update && apt-get install -y libz-dev
 RUN (cd build && native-image $(cat native-image.args))
 
 # Mostly static build
-# -H:+StaticExecutableWithDynamicLibC
+# NON STATIC build
+# RUN apt-get update && apt-get install -y libz-dev
+# RUN (cd build && native-image -H:+StaticExecutableWithDynamicLibC $(cat native-image.args))
 
 # Fully static build
 # # Set up musl, in order to produce a static image compatible to alpine
@@ -50,7 +52,8 @@ RUN (cd build && native-image $(cat native-image.args))
 #     $(cat native-image.args))
 # END full static
 
-ENTRYPOINT [ "/bin/bash" ]
+# ENTRYPOINT [ "/bin/bash" ]
+ENTRYPOINT [ "/build/code-with-quarkus-1.0.0-SNAPSHOT-runner" ]
 
 # FROM scratch
 

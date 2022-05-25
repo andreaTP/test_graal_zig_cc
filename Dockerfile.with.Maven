@@ -1,0 +1,22 @@
+FROM ubuntu:18.04
+
+RUN apt-get update && apt-get install -y curl wget build-essential make binutils libz-dev maven
+
+RUN wget https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.1.0/graalvm-ce-java11-linux-amd64-22.1.0.tar.gz && \
+    tar -xvf graalvm-ce-java11-linux-amd64-22.1.0.tar.gz
+ENV PATH="/graalvm-ce-java11-22.1.0/bin:${PATH}"
+
+RUN gu install native-image
+
+RUN mkdir -p /build
+
+COPY . /build
+
+# This works
+RUN (cd /build && mvn clean package -Pnative)
+ENTRYPOINT [ "/build/target/code-with-quarkus-1.0.0-SNAPSHOT-runner" ]
+
+# This doesn't
+# RUN (cd /build && mvn clean package -Dquarkus.package.type=native-sources)
+# RUN (cd /build/target/native-sources && native-image $(cat native-image.args))
+# ENTRYPOINT [ "/build/target/native-sources/code-with-quarkus-1.0.0-SNAPSHOT-runner" ]
