@@ -16,6 +16,16 @@ RUN wget https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.1.
     tar -xvf zig-linux-x86_64-0.10.0-dev.2351+b64a1d5ab.tar.xz
 ENV PATH="/graalvm-ce-java11-22.1.0/bin:/zig-linux-x86_64-0.10.0-dev.2351+b64a1d5ab:${PATH}"
 
+# Add darwin native libs and stuffs
+RUN mkdir -p /mac && (cd /mac && wget https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.1.0/graalvm-ce-java11-darwin-amd64-22.1.0.tar.gz && \
+    tar -xvf graalvm-ce-java11-darwin-amd64-22.1.0.tar.gz && \
+    cp -r /mac/graalvm-ce-java11-22.1.0/Contents/Home/lib/svm/clibraries/darwin-amd64/ /graalvm-ce-java11-22.1.0/lib/svm/clibraries/ && \
+    cp -r /mac/graalvm-ce-java11-22.1.0/Contents/Home/lib/static/darwin-amd64/ /graalvm-ce-java11-22.1.0/lib/static/)
+
+# Now need to tweak jmods/java.perfs.jmod
+# RUN rm /graalvm-ce-java11-22.1.0/jmods/java.prefs.jmod
+# RUN cp /mac/graalvm-ce-java11-22.1.0/Contents/Home/jmods/java.prefs.jmod /graalvm-ce-java11-22.1.0/jmods
+
 RUN gu install native-image
 
 RUN mkdir -p /build
@@ -23,15 +33,54 @@ RUN mkdir -p /build
 ENV TARGET="-target x86_64-macos"
 
 COPY zigcc /
+COPY darwin-cap /darwin-cap
 COPY --from=maven-image /build/target/native-sources /build
 
-RUN (cd build && \
-    native-image \
-    --native-compiler-path="/zigcc" \
-    --native-compiler-options="${TARGET} -v" \
-    --no-fallback \
-    --verbose \
-    --no-server \
-    $(cat native-image.args))
+# need to download Mac 'clibraries' as well: https://github.com/graalvm/graalvm-ce-builds/releases/download/vm-22.1.0/graalvm-ce-java11-darwin-amd64-22.1.0.tar.gz
+# cp -r /mac/graalvm-ce-java11-22.1.0/Contents/Home/lib/svm/clibraries/darwin-amd64/ /graalvm-ce-java11-22.1.0/lib/svm/clibraries/
+# cp -r /mac/graalvm-ce-java11-22.1.0/Contents/Home/lib/static/darwin-amd64/ /graalvm-ce-java11-22.1.0/lib/static/
+
+# Running native-image--list-cpu-features something on my Mac:
+# All AMD64 CPUFeatures: [CX8, CMOV, FXSR, HT, MMX, AMD_3DNOW_PREFETCH, SSE, SSE2, SSE3, SSSE3, SSE4A, SSE4_1, SSE4_2, POPCNT, LZCNT, TSC, TSCINV, AVX, AVX2, AES, ERMS, CLMUL, BMI1, BMI2, RTM, ADX, AVX512F, AVX512DQ, AVX512PF, AVX512ER, AVX512CD, AVX512BW, AVX512VL, SHA, FMA]
+# Host machine AMD64 CPUFeatures: [AMD_3DNOW_PREFETCH, SSE, SSE2, SSE3, SSSE3, SSE4_1, SSE4_2, POPCNT, LZCNT, AVX, AVX2, AES, ERMS, BMI1, BMI2, ADX, FMA]
+# AMD_3DNOW_PREFETCH,SSE,SSE2,SSE3,SSSE3,SSE4_1,SSE4_2,POPCNT,LZCNT,AVX,AVX2,AES,ERMS,BMI1,BMI2,ADX,FMA
+
+# Trying to create a cap cache first:
+# native-image -H:CAPCacheDir="$PWD/cap" -H:+ExitAfterCAPCache -H:+NewCAPCache $(cat native-image.args)
+
+
+# native-image -H:CPUFeatures=AMD_3DNOW_PREFETCH,SSE,SSE2,SSE3,SSSE3,SSE4_1,SSE4_2,POPCNT,LZCNT,AVX,AVX2,AES,ERMS,BMI1,BMI2,ADX,FMA --shared --target=darwin-amd64 --native-compiler-path="/zigcc" --native-compiler-options="-target x86_64-macos -v" --no-fallback --verbose --no-server $(cat native-image.args)
+#  try to remove: -H:CPUFeatures ?
+# Fatal error: com.oracle.svm.core.util.VMError$HostedError: class java.util.prefs.MacOSXPreferences not found
+# at com.oracle.svm.core.util.VMError.shouldNotReachHere(VMError.java:68)
+# at com.oracle.svm.core.util.VMError.guarantee(VMError.java:89)
+# at com.oracle.svm.core.jdk.JNIRegistrationUtil.clazz(JNIRegistrationUtil.java:77)
+# at com.oracle.svm.core.jdk.JNIRegistrationUtil.rerunClassInit(JNIRegistrationUtil.java:71)
+# at com.oracle.svm.hosted.jdk.JNIRegistrationPrefs.beforeAnalysis(JNIRegistrationPrefs.java:53)
+# at com.oracle.svm.hosted.NativeImageGenerator.lambda$runPointsToAnalysis$9(NativeImageGenerator.java:716)
+# at com.oracle.svm.hosted.FeatureHandler.forEachFeature(FeatureHandler.java:74)
+# at com.oracle.svm.hosted.NativeImageGenerator.runPointsToAnalysis(NativeImageGenerator.java:716)
+# at com.oracle.svm.hosted.NativeImageGenerator.doRun(NativeImageGenerator.java:558)
+# at com.oracle.svm.hosted.NativeImageGenerator.run(NativeImageGenerator.java:515)
+# at com.oracle.svm.hosted.NativeImageGeneratorRunner.buildImage(NativeImageGeneratorRunner.java:407)
+# at com.oracle.svm.hosted.NativeImageGeneratorRunner.build(NativeImageGeneratorRunner.java:585)
+# at com.oracle.svm.hosted.NativeImageGeneratorRunner.main(NativeImageGeneratorRunner.java:128)
+# at com.oracle.svm.hosted.NativeImageGeneratorRunner$JDK9Plus.main(NativeImageGeneratorRunner.java:615)
+# native-image -H:+UseCAPCache -H:-NewCAPCache -H:CAPCacheDir="/darwin-cap" -H:CPUFeatures="AMD_3DNOW_PREFETCH,SSE,SSE2,SSE3,SSSE3,SSE4_1,SSE4_2,POPCNT,LZCNT,AVX,AVX2,AES,ERMS,BMI1,BMI2,ADX,FMA" --shared --target=darwin-amd64 --native-compiler-path="/zigcc" --native-compiler-options="-target x86_64-macos -v" --no-fallback --verbose --no-server $(cat native-image.args)
+
+# -H:TargetPlatform
+native-image -H:+UseCAPCache -H:-NewCAPCache -H:CAPCacheDir="/darwin-cap" -H:CPUFeatures="AMD_3DNOW_PREFETCH,SSE,SSE2,SSE3,SSSE3,SSE4_1,SSE4_2,POPCNT,LZCNT,AVX,AVX2,AES,ERMS,BMI1,BMI2,ADX,FMA" --shared --target=darwin-amd64 --native-compiler-path="/zigcc" --native-compiler-options="-target x86_64-macos -v" --no-fallback --verbose --no-server $(cat native-image.args)
+
+
+#  need to merge the jmod files somehow ...
+
+# RUN (cd build && \
+#     native-image \
+#     --native-compiler-path="/zigcc" \
+#     --native-compiler-options="${TARGET} -v" \
+#     --no-fallback \
+#     --verbose \
+#     --no-server \
+#     $(cat native-image.args))
 
 ENTRYPOINT [ "/bin/bash" ]
