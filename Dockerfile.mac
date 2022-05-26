@@ -69,10 +69,10 @@ COPY --from=maven-image /build/target/native-sources /build
 # native-image -H:+UseCAPCache -H:-NewCAPCache -H:CAPCacheDir="/darwin-cap" -H:CPUFeatures="AMD_3DNOW_PREFETCH,SSE,SSE2,SSE3,SSSE3,SSE4_1,SSE4_2,POPCNT,LZCNT,AVX,AVX2,AES,ERMS,BMI1,BMI2,ADX,FMA" --shared --target=darwin-amd64 --native-compiler-path="/zigcc" --native-compiler-options="-target x86_64-macos -v" --no-fallback --verbose --no-server $(cat native-image.args)
 
 # -H:TargetPlatform
-native-image -H:+UseCAPCache -H:-NewCAPCache -H:CAPCacheDir="/darwin-cap" -H:CPUFeatures="AMD_3DNOW_PREFETCH,SSE,SSE2,SSE3,SSSE3,SSE4_1,SSE4_2,POPCNT,LZCNT,AVX,AVX2,AES,ERMS,BMI1,BMI2,ADX,FMA" --shared --target=darwin-amd64 --native-compiler-path="/zigcc" --native-compiler-options="-target x86_64-macos -v" --no-fallback --verbose --no-server $(cat native-image.args)
+# native-image -H:+UseCAPCache -H:-NewCAPCache -H:CAPCacheDir="/darwin-cap" -H:CPUFeatures="AMD_3DNOW_PREFETCH,SSE,SSE2,SSE3,SSSE3,SSE4_1,SSE4_2,POPCNT,LZCNT,AVX,AVX2,AES,ERMS,BMI1,BMI2,ADX,FMA" --shared -H:TargetPlatform="darwin-amd64" --native-compiler-path="/zigcc" --native-compiler-options="-target x86_64-macos -v" --no-fallback --verbose --no-server $(cat native-image.args)
 
 
-#  need to merge the jmod files somehow ...
+#  need to merge the jmod files somehow ... or try to disable that Pref AutoFeature
 
 # RUN (cd build && \
 #     native-image \
@@ -82,5 +82,31 @@ native-image -H:+UseCAPCache -H:-NewCAPCache -H:CAPCacheDir="/darwin-cap" -H:CPU
 #     --verbose \
 #     --no-server \
 #     $(cat native-image.args))
+
+
+# New attempt rebuild native-image without JNIRegistrationPrefs
+# Build GraalVM native-image on the fly
+RUN apt update && apt install -y curl wget xz-utils python3.8 python3.8-distutils binutils build-essential libz-dev zlib1g-dev git
+
+RUN git clone --depth 1 --branch=vm-22.1.0.1 https://github.com/oracle/graal.git
+RUN git clone --depth 1 https://github.com/graalvm/mx.git
+ENV PATH="/mx:${PATH}"
+
+RUN mx --java-home= fetch-jdk --jdk-id labsjdk-ce-11 --to jdk-dl
+ENV JAVA_HOME=/jdk-dl/labsjdk-ce-11-jvmci-22.2-b01
+
+RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+RUN python3.8 get-pip.py
+RUN pip3.8 install ninja_syntax
+
+FROM HERE: Fix `isDarwin()` everywhere
+# RUN rm /graal/substratevm/src/com.oracle.svm.hosted/src/com/oracle/svm/hosted/jdk/JNIRegistrationPrefs.java
+
+RUN (cd /graal/substratevm && mx --native=native-image,lib:jvmcicompiler --components="Native Image,LibGraal" build)
+# RUN cp $(cd /graal/substratevm && mx --native=native-image --components="Native Image" graalvm-home)/bin/native-image /graalvm-ce-java11-22.1.0/bin/hack-native-image
+# Finish to build GraalVM native-image
+
+# unset JAVA_HOME
+ENV JAVA_HOME=
 
 ENTRYPOINT [ "/bin/bash" ]
