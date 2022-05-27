@@ -106,6 +106,16 @@ RUN (cd /graal/substratevm && mx --native=native-image,lib:jvmcicompiler --compo
 # RUN cp $(cd /graal/substratevm && mx --native=native-image --components="Native Image" graalvm-home)/bin/native-image /graalvm-ce-java11-22.1.0/bin/hack-native-image
 # Finish to build GraalVM native-image
 
+# Next step is to make native-image independent on the target:
+# No, cross compilation between different OS is more or less impossible in
+#  the current approach because OS specific JDK classes need to be loaded 
+# in the image generator
+
+# The biggest problem is, e.g., the file system and network stack. The JDK code
+#  for that is very different for Linux, MacOS, and Windows. You cannot load the 
+# code from two platforms at the same time, but you need to load the code from 
+# the platform that the image generator runs on.
+
 # unset JAVA_HOME
 ENV JAVA_HOME=
 
